@@ -6,6 +6,285 @@
     <meta name="theme-color" content="#17120f" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2317110f'/%3E%3Cpath d='M18 45 30 14l8 14 8-7-13 28-7-15z' fill='%23e1a65b'/%3E%3C/svg%3E" />
     <title>붉은 달의 성채</title>
+    <style>
+      #super-mode-button {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 2147483647;
+        padding: 8px 14px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #17110f;
+        background: linear-gradient(180deg, #f2c879, #e1a65b);
+        border: 1px solid #7a5326;
+        border-radius: 6px;
+        cursor: pointer;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+      }
+      #super-mode-button:hover {
+        filter: brightness(1.08);
+      }
+      #super-mode-button:active {
+        transform: translateY(1px);
+      }
+      #super-mode-button.active {
+        background: linear-gradient(180deg, #7be07b, #4caf50);
+        border-color: #2e6b30;
+        color: #0d1a0d;
+      }
+      #super-mode-toast {
+        position: fixed;
+        top: 52px;
+        left: 12px;
+        z-index: 2147483647;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #f2c879;
+        background: rgba(23, 17, 15, 0.92);
+        border: 1px solid #7a5326;
+        border-radius: 6px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      #super-mode-toast.visible {
+        opacity: 1;
+      }
+    </style>
+    <script>
+      //    전투 중 실시간 체력은 서버 응답이 아니라 리액트 컴포넌트의 useState에만 있으므로,
+      //    HP 게이지 DOM(role=progressbar)에서 리액트 파이버를 타고 올라가 {player, enemy} 형태의
+      //    전투 상태 훅을 찾아 그 훅의 dispatch를 직접 호출해 player.hp를 maxHp로 되돌린다.
+      //    진행 저장 요청(PUT /games/{id}/progress)
+
+      (function () {
+        var currentGame = null;
+        var superModeActive = false;
+        var toastEl = null;
+        var toastTimer = null;
+        var buttonEl = null;
+        var liveHealTimer = null;
+        var visibilityTimer = null;
+
+        function isGameScene() {
+          var appEl = document.querySelector(".app");
+          if (!appEl) {
+            return false;
+          }
+          var cls = appEl.className;
+          // 타이틀 화면과 저장 목록(불러오기) 화면, 에셋 갤러리에서는 숨기기
+          if (/scene-title/.test(cls) || /scene-home/.test(cls) || /gallery/i.test(cls)) {
+            return false;
+          }
+          return /scene-/.test(cls);
+        }
+
+        function updateVisibility() {
+          var show = isGameScene();
+          if (buttonEl) {
+            buttonEl.hidden = !show;
+          }
+          if (toastEl && !show) {
+            toastEl.classList.remove("visible");
+          }
+        }
+
+        function findBattleHook() {
+          var bars = document.querySelectorAll('[role="progressbar"]');
+          for (var i = 0; i < bars.length; i++) {
+            var fiberKey = Object.keys(bars[i]).find(function (k) {
+              return k.indexOf("__reactFiber$") === 0;
+            });
+            if (!fiberKey) {
+              continue;
+            }
+            var fiber = bars[i][fiberKey];
+            for (var depth = 0; depth < 20 && fiber; depth++) {
+              var hook = fiber.memoizedState;
+              var hookIndex = 0;
+              while (hook && hookIndex < 15) {
+                var state = hook.memoizedState;
+                if (
+                  state &&
+                  typeof state === "object" &&
+                  state.player &&
+                  typeof state.player.hp === "number" &&
+                  typeof state.player.maxHp === "number" &&
+                  state.enemy
+                ) {
+                  return hook;
+                }
+                hook = hook.next;
+                hookIndex++;
+              }
+              fiber = fiber.return;
+            }
+          }
+          return null;
+        }
+
+        function enforceLiveFullHp() {
+          var hook = findBattleHook();
+          if (!hook || hook.memoizedState.player.hp >= hook.memoizedState.player.maxHp) {
+            return;
+          }
+          hook.queue.dispatch(function (prev) {
+            if (!prev || !prev.player || prev.player.hp >= prev.player.maxHp) {
+              return prev;
+            }
+            return Object.assign({}, prev, {
+              player: Object.assign({}, prev.player, { hp: prev.player.maxHp }),
+            });
+          });
+        }
+
+        function showToast(message) {
+          if (!toastEl) {
+            return;
+          }
+          toastEl.textContent = message;
+          toastEl.classList.add("visible");
+          if (toastTimer) {
+            clearTimeout(toastTimer);
+          }
+          toastTimer = setTimeout(function () {
+            toastEl.classList.remove("visible");
+          }, 2500);
+        }
+
+        function extractGame(json) {
+          if (json && typeof json.id !== "undefined" && typeof json.currentHp !== "undefined") {
+            currentGame = {
+              id: json.id,
+              currentFloor: json.currentFloor,
+              phase: json.phase,
+              status: json.status,
+              deck: Array.isArray(json.deck)
+                ? json.deck.map(function (c) {
+                    return { cardType: c.cardType, acquiredFloor: c.acquiredFloor };
+                  })
+                : [],
+            };
+          }
+        }
+
+        function withMaxHp(bodyText) {
+          try {
+            var parsed = JSON.parse(bodyText);
+            parsed.currentHp = 99;
+            return JSON.stringify(parsed);
+          } catch (e) {
+            return bodyText;
+          }
+        }
+
+        var originalFetch = window.fetch.bind(window);
+        window.fetch = function (input, init) {
+          var url = typeof input === "string" ? input : (input && input.url) || "";
+          if (
+            superModeActive &&
+            init &&
+            typeof init.body === "string" &&
+            /\/games\/\d+\/progress$/.test(url) &&
+            (init.method || "GET").toUpperCase() === "PUT"
+          ) {
+            init = Object.assign({}, init, { body: withMaxHp(init.body) });
+          }
+          return originalFetch(input, init).then(function (response) {
+            if (/\/games(\/\d+)?(\/progress)?$/.test(url) && response.ok) {
+              response
+                .clone()
+                .json()
+                .then(extractGame)
+                .catch(function () {});
+            }
+            return response;
+          });
+        };
+
+        function setActive(active) {
+          superModeActive = active;
+          if (buttonEl) {
+            buttonEl.classList.toggle("active", active);
+            buttonEl.textContent = active ? "슈퍼모드 ON" : "슈퍼모드";
+          }
+          if (liveHealTimer) {
+            clearInterval(liveHealTimer);
+            liveHealTimer = null;
+          }
+          if (active) {
+            liveHealTimer = setInterval(enforceLiveFullHp, 200);
+            enforceLiveFullHp();
+          }
+        }
+
+        function activateSuperMode() {
+          if (superModeActive) {
+            setActive(false);
+            showToast("슈퍼모드를 껐습니다.");
+            return;
+          }
+          if (!currentGame) {
+            showToast("먼저 게임을 시작하거나 불러와 주세요.");
+            return;
+          }
+          if (currentGame.status !== "PLAYING") {
+            showToast("이미 종료된 게임입니다.");
+            return;
+          }
+          var body = {
+            currentHp: 99,
+            currentFloor: currentGame.currentFloor,
+            phase: currentGame.phase,
+            status: currentGame.status,
+            deck: currentGame.deck,
+          };
+          originalFetch("/games/" + currentGame.id + "/progress", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+            .then(function (res) {
+              if (!res.ok) {
+                showToast("슈퍼모드 적용에 실패했습니다.");
+                return;
+              }
+              return res.json().then(extractGame);
+            })
+            .then(function () {
+              setActive(true);
+              showToast("슈퍼모드 On: 체력이 항상 가득 찹니다.");
+            })
+            .catch(function () {
+              showToast("슈퍼모드 적용에 실패했습니다.");
+            });
+        }
+
+        function createButton() {
+          buttonEl = document.createElement("button");
+          buttonEl.id = "super-mode-button";
+          buttonEl.type = "button";
+          buttonEl.textContent = "슈퍼모드";
+          buttonEl.addEventListener("click", activateSuperMode);
+          document.body.appendChild(buttonEl);
+
+          toastEl = document.createElement("div");
+          toastEl.id = "super-mode-toast";
+          document.body.appendChild(toastEl);
+
+          updateVisibility();
+          visibilityTimer = setInterval(updateVisibility, 300);
+        }
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", createButton);
+        } else {
+          createButton();
+        }
+      })();
+    </script>
     <script type="module" crossorigin src="./assets/index-CA-Ik-A8.js"></script>
     <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-Bh1tDfsg.js">
     <link rel="stylesheet" crossorigin href="./assets/index-Bj1Zr0KH.css">
