@@ -1,8 +1,11 @@
 package com.gamebasic.runcard.repository;
 
 import com.gamebasic.game.entity.Game;
+import com.gamebasic.runcard.dto.DeckCount;
 import com.gamebasic.runcard.entity.RunCard;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
@@ -13,4 +16,7 @@ public interface RunCardRepository extends JpaRepository<RunCard, Long> {
 
     // TODO (Lv 11): @Query 작성
     // List<DeckCount> countByGames(List<Game> games);
+    @Query("select new com.gamebasic.runcard.dto.DeckCount(r.game.id, count(r)) "
+        + "from RunCard r where r.game in :games group by r.game.id")
+    List<DeckCount> countByGames(@Param("games") List<Game> games);
 }

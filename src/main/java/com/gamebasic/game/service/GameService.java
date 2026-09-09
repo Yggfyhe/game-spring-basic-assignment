@@ -10,6 +10,7 @@ import com.gamebasic.game.repository.GameRepository;
 import com.gamebasic.common.exception.GameFinishedException;
 import com.gamebasic.common.exception.GameNotFoundException;
 import com.gamebasic.runcard.dto.CardResponse;
+import com.gamebasic.runcard.dto.DeckCount;
 import com.gamebasic.runcard.dto.RunCardRequest;
 import com.gamebasic.runcard.entity.RunCard;
 import com.gamebasic.runcard.repository.RunCardRepository;
@@ -18,7 +19,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -69,6 +72,7 @@ public class GameService {
     @Transactional(readOnly = true)
     public List<GameSummaryResponse> getGames() {
         List<Game> games = gameRepository.findAllByOrderByIdDesc();
+        Map<Long, Long> deckSizes = getDeckSizes(games);
         List<GameSummaryResponse> summaries = new ArrayList<>();
         for (Game game : games) {
             summaries.add(new GameSummaryResponse(
@@ -77,10 +81,25 @@ public class GameService {
                 game.getCurrentHp(),
                 game.getCurrentFloor(),
                 game.getPhase(),
-                game.getStatus()
+                game.getStatus(),
+                deckSizes.getOrDefault(game.getId(), 0L).intValue(),
+                game.getCreatedAt(),
+                game.getUpdatedAt()
             ));
         }
         return summaries;
+    }
+
+    // Lv 11: 게임 목록 N개에 대해 카드 수를 한 번의 group by 쿼리로 집계(N+1 방지).
+    private Map<Long, Long> getDeckSizes(List<Game> games) {
+        if (games.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> deckSizes = new HashMap<>();
+        for (DeckCount deckCount : runCardRepository.countByGames(games)) {
+            deckSizes.put(deckCount.getGameId(), deckCount.getCardCount());
+        }
+        return deckSizes;
     }
 
     // TODO (Lv 7): 게임 상세 조회. 주석을 풀고 구현하세요.
@@ -103,6 +122,8 @@ public class GameService {
             game.getCurrentFloor(),
             game.getPhase(),
             game.getStatus(),
+            game.getCreatedAt(),
+            game.getUpdatedAt(),
             deck
         );
     }
