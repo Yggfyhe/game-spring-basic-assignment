@@ -7,15 +7,15 @@ import com.gamebasic.game.dto.ProgressRequest;
 import com.gamebasic.game.dto.RenameRequest;
 import com.gamebasic.game.entity.Game;
 import com.gamebasic.game.repository.GameRepository;
+import com.gamebasic.common.exception.GameFinishedException;
+import com.gamebasic.common.exception.GameNotFoundException;
 import com.gamebasic.runcard.dto.CardResponse;
 import com.gamebasic.runcard.dto.RunCardRequest;
 import com.gamebasic.runcard.entity.RunCard;
 import com.gamebasic.runcard.repository.RunCardRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,14 +44,14 @@ public class GameService {
 
     private Game findGame(Long gameId) {
         return gameRepository.findById(gameId)
-            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+            .orElseThrow(() -> new GameNotFoundException(gameId));
     }
 
     @Transactional
     public GameDetailResponse updateProgress(Long gameId, ProgressRequest request) {
         Game game = findGame(gameId);
         if (game.isFinished()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT);
+            throw new GameFinishedException(gameId);
         }
         game.updateProgress(
             request.getCurrentHp(),
