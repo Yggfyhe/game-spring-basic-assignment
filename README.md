@@ -20,10 +20,10 @@
 ## 도전
 
 - Lv 9. 끝난 게임 덮어쓰기 막기: 409
-  (미구현)
+  [`GameService`](./src/main/java/com/gamebasic/game/service/GameService.java)의 `updateProgress`에서 `game.isFinished()`면 덮어쓰기 전에 409를 던지도록 수정함
 - Lv 10. 전역 예외 처리: 404·409에 message 붙이기
-  (미구현)
+  [`GlobalExceptionHandler`](./src/main/java/com/gamebasic/common/exception/GlobalExceptionHandler.java)에 `GameNotFoundException`/`GameFinishedException` 핸들러를 추가하고 [`GameService`](./src/main/java/com/gamebasic/game/service/GameService.java)가 이 예외들을 던지도록 교체함
 - Lv 11. N+1 없는 카드 수 집계와 저장 시간
-  (미구현)
+  [`BaseEntity`](./src/main/java/com/gamebasic/common/entity/BaseEntity.java)로 `createdAt`/`updatedAt`을 채우고, [`RunCardRepository`](./src/main/java/com/gamebasic/runcard/repository/RunCardRepository.java)의 `countByGames`를 [`DeckCount`](./src/main/java/com/gamebasic/runcard/dto/DeckCount.java) DTO 프로젝션으로 구현해 목록의 카드 수를 N+1 없이 집계함
 - Lv 12. 랭킹
   (미구현)
