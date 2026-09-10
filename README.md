@@ -26,4 +26,4 @@
 - Lv 11. N+1 없는 카드 수 집계와 저장 시간
   [`BaseEntity`](./src/main/java/com/gamebasic/common/entity/BaseEntity.java)로 `createdAt`/`updatedAt`을 채우고, [`RunCardRepository`](./src/main/java/com/gamebasic/runcard/repository/RunCardRepository.java)의 `countByGames`를 [`DeckCount`](./src/main/java/com/gamebasic/runcard/dto/DeckCount.java) DTO 프로젝션으로 구현해 목록의 카드 수를 N+1 없이 집계함
 - Lv 12. 랭킹
-  (미구현)
+  신규 [`ranking`](./src/main/java/com/gamebasic/ranking) 패키지에서 [`RankingClient`](./src/main/java/com/gamebasic/ranking/client/RankingClient.java)로 외부 랭킹 API를 호출하고, [`RankingService`](./src/main/java/com/gamebasic/ranking/service/RankingService.java)에서 순위 대상 판별·이상 기록 제외·정렬·플레이어당 1건 처리를 거쳐 `GET /rankings`로 응답함
